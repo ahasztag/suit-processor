@@ -59,6 +59,21 @@ static const struct zcbor_string exp_manifest_component_id = {
 
 static const uint32_t exp_seq_num = 1234;
 
+static int mock_manifest_unsupported_digest_alg(struct suit_decoder_state* decoder_state, int cmock_num_calls)
+{
+	static uint8_t invalid_digest_bstr_cbor[] = {
+		0x82, /* array (2 elements) */
+		0x38, 0xAA, /* suit-digest-algorithm-id: unsupported */
+		0x58, 0x20, /* suit-digest-bytes: bytes(16) */
+		0x66, 0x58, 0xea, 0x56, 0x02, 0x62, 0x69, 0x6d,
+		0xd1, 0xf1, 0x3b, 0x78, 0x22, 0x39, 0xa0, 0x64,
+	};
+
+	decoder_state->manifest_digest_bytes.value = invalid_digest_bstr_cbor;
+	decoder_state->manifest_digest_bytes.len = sizeof(invalid_digest_bstr_cbor);
+
+	return SUIT_SUCCESS;
+}
 
 static int mock_manifest_invalid_digest_bstr(struct suit_decoder_state* decoder_state, int cmock_num_calls)
 {
@@ -464,6 +479,36 @@ void test_invalid_decoded_digest_length_sha512(void)
 
 	int ret = suit_processor_get_manifest_metadata(&envelope_str[0], envelope_len, false, NULL, NULL, NULL, NULL);
 	TEST_ASSERT_EQUAL_MESSAGE(SUIT_ERR_DECODING, ret, "Invalid manifest digest (SHA-512) length decoded, but error code was not returned");
+	TEST_ASSERT_EQUAL_MESSAGE(INVALID, state.decoder_state.step, "SUIT decoder state not reset after decoding");
+}
+
+void test_unsupported_decoded_digest_alg(void)
+{
+	uint8_t envelope_str[] = {
+		0xd8, 0x6b, /* tag(107) : SUIT_Envelope */
+		0xa0, /* map (0 elements) */
+	};
+	size_t envelope_len = sizeof(envelope_str);
+
+	__cmock_suit_decoder_init_ExpectAndReturn(
+		&state.decoder_state,
+		&state.manifest_stack[0],
+		SUIT_SUCCESS);
+	__cmock_suit_decoder_decode_envelope_ExpectAndReturn(
+		&state.decoder_state,
+		&envelope_str[0],
+		envelope_len,
+		SUIT_SUCCESS);
+	__cmock_suit_decoder_check_manifest_digest_ExpectAndReturn(
+		&state.decoder_state,
+		SUIT_SUCCESS);
+	__cmock_suit_decoder_decode_manifest_ExpectAndReturn(
+		&state.decoder_state,
+		SUIT_SUCCESS);
+	__cmock_suit_decoder_decode_manifest_StubWithCallback(mock_manifest_unsupported_digest_alg);
+
+	int ret = suit_processor_get_manifest_metadata(&envelope_str[0], envelope_len, false, NULL, NULL, NULL, NULL);
+	TEST_ASSERT_EQUAL_MESSAGE(SUIT_ERR_DECODING, ret, "Unsupported manifest digest algorithm decoded, but error code was not returned");
 	TEST_ASSERT_EQUAL_MESSAGE(INVALID, state.decoder_state.step, "SUIT decoder state not reset after decoding");
 }
 
